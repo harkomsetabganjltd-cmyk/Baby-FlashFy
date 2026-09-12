@@ -36,8 +36,7 @@ jobs:
       - name: Build
         run: |
           if [ -f ./gradlew ]; then
-            chmod +x ./gradlew
-            ./gradlew assembleDebug
+            ...
           else
             echo "ERROR: gradlew not found"
             exit 1
