@@ -1,0 +1,242 @@
+name: Build FlashFy Baby
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check input files
+        run: |
+          set -e
+          test -f FlashFy_com.chowdhuryelab.flashfy.zip
+          test -f flashfy_baby_background.jpg
+
+      - name: Install Java and Android SDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android command line tools
+        uses: android-actions/setup-android@v3
+
+      - name: Install build tools
+        run: |
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Install Apktool
+        run: |
+          curl -L --fail -o apktool.jar \
+            https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar
+
+      - name: Extract original APK
+        run: |
+          set -e
+          mkdir -p input
+          unzip -q FlashFy_com.chowdhuryelab.flashfy.zip -d input
+          test -f input/base.apk
+          test -f input/split_config.arm64_v8a.apk
+
+      - name: Decode base APK
+        run: |
+          java -jar apktool.jar d -f input/base.apk -o decoded
+
+      - name: Add the supplied baby background
+        run: |
+          set -e
+          mkdir -p decoded/res/drawable-nodpi
+          cp flashfy_baby_background.jpg decoded/res/drawable-nodpi/flashfy_baby_background.jpg
+
+      - name: Patch MainActivity
+        run: |
+          set -e
+          MAIN="$(find decoded/smali* -type f -path '*/com/chowdhuryelab/flashfy/MainActivity.smali' | head -1)"
+          test -n "$MAIN"
+
+          python3 - "$MAIN" <<'PY'
+import re, sys
+p=sys.argv[1]
+s=open(p,encoding="utf-8").read()
+
+call="    invoke-static {p0}, Lcom/chowdhuryelab/flashfy/OverlayController;->install(Landroid/app/Activity;)V\n"
+
+m=re.search(r"(\.method[^\n]* onCreate\(Landroid/os/Bundle;\)V\n)(.*?)(\.end method)",s,re.S)
+if not m:
+    raise SystemExit("onCreate not found")
+
+body=m.group(2)
+if "OverlayController;->install" not in body:
+    lm=re.search(r"(^\s*\.locals\s+\d+\s*$|^\s*\.registers\s+\d+\s*$)",body,re.M)
+    if not lm:
+        raise SystemExit("locals/registers not found")
+    pos=lm.end()
+    body=body[:pos]+"\n"+call+body[pos:]
+    s=s[:m.start(2)]+body+s[m.end(2):]
+
+open(p,"w",encoding="utf-8").write(s)
+print("Patched:",p)
+PY
+
+      - name: Build patched base
+        run: |
+          java -jar apktool.jar b decoded -o patched-base.apk
+
+      - name: Compile flashlight overlay controller
+        run: |
+          set -e
+          cat > OverlayController.java <<'JAVA'
+package com.chowdhuryelab.flashfy;
+
+import android.app.Activity;
+import android.content.Context;
+import android.hardware.camera2.CameraManager;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.View;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.widget.ImageView;
+
+public final class OverlayController {
+    private static boolean installed;
+    private static FrameLayout overlay;
+
+    public static void install(final Activity activity) {
+        if (installed) return;
+        installed = true;
+
+        activity.runOnUiThread(new Runnable() {
+            @Override public void run() {
+                final FrameLayout root = new FrameLayout(activity);
+                root.setClickable(false);
+                root.setFocusable(false);
+
+                ImageView image = new ImageView(activity);
+                image.setScaleType(ImageView.ScaleType.FIT_XY);
+
+                int id = activity.getResources().getIdentifier(
+                    "flashfy_baby_background", "drawable", activity.getPackageName());
+
+                if (id != 0) {
+                    image.setImageResource(id);
+                }
+
+                root.addView(image, new FrameLayout.LayoutParams(-1, -1));
+                root.setVisibility(View.GONE);
+                overlay = root;
+
+                ViewGroup decor =
+                    (ViewGroup) activity.getWindow().getDecorView();
+                decor.addView(root, new ViewGroup.LayoutParams(-1, -1));
+
+                CameraManager camera =
+                    (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
+
+                if (camera != null) {
+                    try {
+                        camera.registerTorchCallback(
+                            new CameraManager.TorchCallback() {
+                                @Override
+                                public void onTorchModeChanged(
+                                    String cameraId, boolean enabled) {
+                                    if (overlay != null) {
+                                        overlay.setVisibility(
+                                            enabled ? View.VISIBLE : View.GONE);
+                                    }
+                                }
+
+                                @Override
+                                public void onTorchModeUnavailable(
+                                    String cameraId) {}
+                            },
+                            new Handler(Looper.getMainLooper())
+                        );
+                    } catch (Throwable ignored) {}
+                }
+            }
+        });
+    }
+}
+JAVA
+
+          ANDROID_JAR="$ANDROID_HOME/platforms/android-35/android.jar"
+          D8="$ANDROID_HOME/build-tools/35.0.0/d8"
+
+          mkdir -p helper_classes helper_dex
+          javac -source 8 -target 8 \
+            -classpath "$ANDROID_JAR" \
+            -d helper_classes OverlayController.java
+
+          "$D8" --min-api 23 \
+            --lib "$ANDROID_JAR" \
+            --output helper_dex helper_classes
+
+      - name: Merge overlay dex into APK
+        run: |
+          set -e
+          mkdir -p apk_unpacked merged_dex
+          unzip -q patched-base.apk -d apk_unpacked
+
+          "$ANDROID_HOME/build-tools/35.0.0/d8" \
+            --min-api 23 \
+            --lib "$ANDROID_HOME/platforms/android-35/android.jar" \
+            --output merged_dex \
+            apk_unpacked/classes.dex \
+            helper_dex/classes.dex
+
+          cp merged_dex/classes.dex apk_unpacked/classes.dex
+
+          cd apk_unpacked
+          zip -qr ../unsigned.apk .
+          cd ..
+
+      - name: Add arm64 native library
+        run: |
+          set -e
+          mkdir -p arm64
+          unzip -q input/split_config.arm64_v8a.apk 'lib/arm64-v8a/*' -d arm64
+          mkdir -p apk_unpacked/lib
+          cp -r arm64/lib/arm64-v8a apk_unpacked/lib/
+
+          cd apk_unpacked
+          rm -f ../unsigned.apk
+          zip -qr ../unsigned.apk .
+          cd ..
+
+      - name: Align and sign
+        run: |
+          set -e
+          keytool -genkeypair -v \
+            -keystore flashfy.jks \
+            -storepass android \
+            -keypass android \
+            -alias flashfy \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=FlashFy Baby, O=FlashFy, C=BD"
+
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" \
+            -f 4 unsigned.apk aligned.apk
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks flashfy.jks \
+            --ks-pass pass:android \
+            --key-pass pass:android \
+            --ks-key-alias flashfy \
+            --out FlashFy-Baby.apk \
+            aligned.apk
+
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify FlashFy-Baby.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FlashFy-Baby
+          path: FlashFy-Baby.apk
