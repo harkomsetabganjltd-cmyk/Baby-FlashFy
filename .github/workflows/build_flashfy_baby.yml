@@ -1,10 +1,11 @@
 name: Build FlashFy Baby
 
-on: [workflow_dispatch]
+'on':
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-lhttps://github.com/harkomsetabganjltd-cmyk/Baby-FlashFy/actionsatest
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
