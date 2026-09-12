@@ -60,28 +60,28 @@ jobs:
           test -n "$MAIN"
 
           python3 - "$MAIN" <<'PY'
-import re, sys
-p=sys.argv[1]
-s=open(p,encoding="utf-8").read()
-
-call="    invoke-static {p0}, Lcom/chowdhuryelab/flashfy/OverlayController;->install(Landroid/app/Activity;)V\n"
-
-m=re.search(r"(\.method[^\n]* onCreate\(Landroid/os/Bundle;\)V\n)(.*?)(\.end method)",s,re.S)
-if not m:
-    raise SystemExit("onCreate not found")
-
-body=m.group(2)
-if "OverlayController;->install" not in body:
-    lm=re.search(r"(^\s*\.locals\s+\d+\s*$|^\s*\.registers\s+\d+\s*$)",body,re.M)
-    if not lm:
-        raise SystemExit("locals/registers not found")
-    pos=lm.end()
-    body=body[:pos]+"\n"+call+body[pos:]
-    s=s[:m.start(2)]+body+s[m.end(2):]
-
-open(p,"w",encoding="utf-8").write(s)
-print("Patched:",p)
-PY
+          import re, sys
+          p=sys.argv[1]
+          s=open(p,encoding="utf-8").read()
+          
+          call="    invoke-static {p0}, Lcom/chowdhuryelab/flashfy/OverlayController;->install(Landroid/app/Activity;)V\n"
+          
+          m=re.search(r"(\.method[^\n]* onCreate\(Landroid/os/Bundle;\)V\n)(.*?)(\.end method)",s,re.S)
+          if not m:
+              raise SystemExit("onCreate not found")
+          
+          body=m.group(2)
+          if "OverlayController;->install" not in body:
+              lm=re.search(r"(^\s*\.locals\s+\d+\s*$|^\s*\.registers\s+\d+\s*$)",body,re.M)
+              if not lm:
+                  raise SystemExit("locals/registers not found")
+              pos=lm.end()
+              body=body[:pos]+"\n"+call+body[pos:]
+              s=s[:m.start(2)]+body+s[m.end(2):]
+          
+          open(p,"w",encoding="utf-8").write(s)
+          print("Patched:",p)
+          PY
 
       - name: Build patched base
         run: |
@@ -91,79 +91,79 @@ PY
         run: |
           set -e
           cat > OverlayController.java <<'JAVA'
-package com.chowdhuryelab.flashfy;
-
-import android.app.Activity;
-import android.content.Context;
-import android.hardware.camera2.CameraManager;
-import android.os.Handler;
-import android.os.Looper;
-import android.view.View;
-import android.view.ViewGroup;
-import android.widget.FrameLayout;
-import android.widget.ImageView;
-
-public final class OverlayController {
-    private static boolean installed;
-    private static FrameLayout overlay;
-
-    public static void install(final Activity activity) {
-        if (installed) return;
-        installed = true;
-
-        activity.runOnUiThread(new Runnable() {
-            @Override public void run() {
-                final FrameLayout root = new FrameLayout(activity);
-                root.setClickable(false);
-                root.setFocusable(false);
-
-                ImageView image = new ImageView(activity);
-                image.setScaleType(ImageView.ScaleType.FIT_XY);
-
-                int id = activity.getResources().getIdentifier(
-                    "flashfy_baby_background", "drawable", activity.getPackageName());
-
-                if (id != 0) {
-                    image.setImageResource(id);
-                }
-
-                root.addView(image, new FrameLayout.LayoutParams(-1, -1));
-                root.setVisibility(View.GONE);
-                overlay = root;
-
-                ViewGroup decor =
-                    (ViewGroup) activity.getWindow().getDecorView();
-                decor.addView(root, new ViewGroup.LayoutParams(-1, -1));
-
-                CameraManager camera =
-                    (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
-
-                if (camera != null) {
-                    try {
-                        camera.registerTorchCallback(
-                            new CameraManager.TorchCallback() {
-                                @Override
-                                public void onTorchModeChanged(
-                                    String cameraId, boolean enabled) {
-                                    if (overlay != null) {
-                                        overlay.setVisibility(
-                                            enabled ? View.VISIBLE : View.GONE);
-                                    }
-                                }
-
-                                @Override
-                                public void onTorchModeUnavailable(
-                                    String cameraId) {}
-                            },
-                            new Handler(Looper.getMainLooper())
-                        );
-                    } catch (Throwable ignored) {}
-                }
-            }
-        });
-    }
-}
-JAVA
+          package com.chowdhuryelab.flashfy;
+          
+          import android.app.Activity;
+          import android.content.Context;
+          import android.hardware.camera2.CameraManager;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.view.View;
+          import android.view.ViewGroup;
+          import android.widget.FrameLayout;
+          import android.widget.ImageView;
+          
+          public final class OverlayController {
+              private static boolean installed;
+              private static FrameLayout overlay;
+          
+              public static void install(final Activity activity) {
+                  if (installed) return;
+                  installed = true;
+          
+                  activity.runOnUiThread(new Runnable() {
+                      @Override public void run() {
+                          final FrameLayout root = new FrameLayout(activity);
+                          root.setClickable(false);
+                          root.setFocusable(false);
+          
+                          ImageView image = new ImageView(activity);
+                          image.setScaleType(ImageView.ScaleType.FIT_XY);
+          
+                          int id = activity.getResources().getIdentifier(
+                              "flashfy_baby_background", "drawable", activity.getPackageName());
+          
+                          if (id != 0) {
+                              image.setImageResource(id);
+                          }
+          
+                          root.addView(image, new FrameLayout.LayoutParams(-1, -1));
+                          root.setVisibility(View.GONE);
+                          overlay = root;
+          
+                          ViewGroup decor =
+                              (ViewGroup) activity.getWindow().getDecorView();
+                          decor.addView(root, new ViewGroup.LayoutParams(-1, -1));
+          
+                          CameraManager camera =
+                              (CameraManager) activity.getSystemService(Context.CAMERA_SERVICE);
+          
+                          if (camera != null) {
+                              try {
+                                  camera.registerTorchCallback(
+                                      new CameraManager.TorchCallback() {
+                                          @Override
+                                          public void onTorchModeChanged(
+                                              String cameraId, boolean enabled) {
+                                              if (overlay != null) {
+                                                  overlay.setVisibility(
+                                                      enabled ? View.VISIBLE : View.GONE);
+                                              }
+                                          }
+          
+                                          @Override
+                                          public void onTorchModeUnavailable(
+                                              String cameraId) {}
+                                      },
+                                      new Handler(Looper.getMainLooper())
+                                  );
+                              } catch (Throwable ignored) {}
+                          }
+                      }
+                  });
+              }
+          }
+          JAVA
 
           ANDROID_JAR="$ANDROID_HOME/platforms/android-35/android.jar"
           D8="$ANDROID_HOME/build-tools/35.0.0/d8"
