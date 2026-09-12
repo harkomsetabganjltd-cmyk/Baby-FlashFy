@@ -1,7 +1,10 @@
 name: Build FlashFy Baby
 
-'on':
+on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   build:
@@ -11,12 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Check files
-        run: |
-          test -f FlashFy_com.chowdhuryelab.flashfy.zip
-          test -f flashfy_baby_background.jpg
-
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -25,82 +23,29 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Install Android tools
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Install Apktool
-        run: curl -L --fail -o apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v2.9.3/apktool_2.9.3.jar
-
-      - name: Extract APK
+      - name: Install tools
         run: |
-          mkdir -p input
-          unzip -q FlashFy_com.chowdhuryelab.flashfy.zip -d input
-          test -f input/base.apk
-          test -f input/split_config.arm64_v8a.apk
+          sudo apt-get update
+          sudo apt-get install -y apktool zip unzip
 
-      - name: Decode
-        run: java -jar apktool.jar d -f input/base.apk -o decoded
-
-      - name: Add baby image
+      - name: Check project
         run: |
-          mkdir -p decoded/res/drawable-nodpi
-          cp flashfy_baby_background.jpg decoded/res/drawable-nodpi/flashfy_baby_background.jpg
+          echo "Files in repository:"
+          find . -maxdepth 3 -type f | sort
 
-      - name: Create patch script
-        env:
-          PATCH_B64: aW1wb3J0IHJlLCBzeXMKcCA9IHN5cy5hcmd2WzFdCnMgPSBvcGVuKHAsIGVuY29kaW5nPSJ1dGYtOCIpLnJlYWQoKQpjYWxsID0gIiAgICBpbnZva2Utc3RhdGljIHtwMH0sIExjb20vY2hvd2RodXJ5ZWxhYi9mbGFzaGZ5L092ZXJsYXlDb250cm9sbGVyOy0+aW5zdGFsbChMYW5kcm9pZC9hcHAvQWN0aXZpdHk7KVZcbiIKbSA9IHJlLnNlYXJjaChyIihcLm1ldGhvZFteXG5dKiBvbkNyZWF0ZVwoTGFuZHJvaWQvb3MvQnVuZGxlO1wpVlxuKSguKj8pKFwuZW5kIG1ldGhvZCkiLCBzLCByZS5TKQppZiBub3QgbToKICAgIHJhaXNlIFN5c3RlbUV4aXQoIm9uQ3JlYXRlIG5vdCBmb3VuZCIpCmJvZHkgPSBtLmdyb3VwKDIpCmlmICJPdmVybGF5Q29udHJvbGxlcjstPmluc3RhbGwiIG5vdCBpbiBib2R5OgogICAgbG0gPSByZS5zZWFyY2gociIoXlxzKlwubG9jYWxzXHMrXGQrXHMqJHxeXHMqXC5yZWdpc3RlcnNccytcZCtccyokKSIsIGJvZHksIHJlLk0pCiAgICBpZiBub3QgbG06CiAgICAgICAgcmFpc2UgU3lzdGVtRXhpdCgibG9jYWxzL3JlZ2lzdGVycyBub3QgZm91bmQiKQogICAgcG9zID0gbG0uZW5kKCkKICAgIGJvZHkgPSBib2R5Wzpwb3NdICsgIlxuIiArIGNhbGwgKyBib2R5W3BvczpdCiAgICBzID0gc1s6bS5zdGFydCgyKV0gKyBib2R5ICsgc1ttLmVuZCgyKTpdCm9wZW4ocCwgInciLCBlbmNvZGluZz0idXRmLTgiKS53cml0ZShzKQpwcmludCgiUGF0Y2hlZDoiLCBwKQo=
+      - name: Build
         run: |
-          echo "$PATCH_B64" | base64 -d > patch.py
-          MAIN="$(find decoded/smali* -type f -path '*/com/chowdhuryelab/flashfy/MainActivity.smali' | head -1)"
-          test -n "$MAIN"
-          python3 patch.py "$MAIN"
-
-      - name: Build patched base
-        run: java -jar apktool.jar b decoded -o patched-base.apk
-
-      - name: Create overlay controller
-        env:
-          JAVA_B64: cGFja2FnZSBjb20uY2hvd2RodXJ5ZWxhYi5mbGFzaGZ5OwoKaW1wb3J0IGFuZHJvaWQuYXBwLkFjdGl2aXR5OwppbXBvcnQgYW5kcm9pZC5jb250ZW50LkNvbnRleHQ7CmltcG9ydCBhbmRyb2lkLmhhcmR3YXJlLmNhbWVyYTIuQ2FtZXJhTWFuYWdlcjsKaW1wb3J0IGFuZHJvaWQub3MuSGFuZGxlcjsKaW1wb3J0IGFuZHJvaWQub3MuTG9vcGVyOwppbXBvcnQgYW5kcm9pZC52aWV3LlZpZXdHcm91cDsKaW1wb3J0IGFuZHJvaWQud2lkZ2V0LkZyYW1lTGF5b3V0OwppbXBvcnQgYW5kcm9pZC53aWRnZXQuSW1hZ2VWaWV3OwoKcHVibGljIGZpbmFsIGNsYXNzIE92ZXJsYXlDb250cm9sbGVyIHsKICAgIHByaXZhdGUgc3RhdGljIGJvb2xlYW4gaW5zdGFsbGVkOwogICAgcHJpdmF0ZSBzdGF0aWMgRnJhbWVMYXlvdXQgb3ZlcmxheTsKCiAgICBwdWJsaWMgc3RhdGljIHZvaWQgaW5zdGFsbChmaW5hbCBBY3Rpdml0eSBhY3Rpdml0eSkgewogICAgICAgIGlmIChpbnN0YWxsZWQpIHJldHVybjsKICAgICAgICBpbnN0YWxsZWQgPSB0cnVlOwogICAgICAgIGFjdGl2aXR5LnJ1bk9uVWlUaHJlYWQobmV3IFJ1bm5hYmxlKCkgewogICAgICAgICAgICBAT3ZlcnJpZGUgcHVibGljIHZvaWQgcnVuKCkgewogICAgICAgICAgICAgICAgZmluYWwgRnJhbWVMYXlvdXQgcm9vdCA9IG5ldyBGcmFtZUxheW91dChhY3Rpdml0eSk7CiAgICAgICAgICAgICAgICBJbWFnZVZpZXcgaW1hZ2UgPSBuZXcgSW1hZ2VWaWV3KGFjdGl2aXR5KTsKICAgICAgICAgICAgICAgIGltYWdlLnNldFNjYWxlVHlwZShJbWFnZVZpZXcuU2NhbGVUeXBlLkZJVF9YWSk7CiAgICAgICAgICAgICAgICBpbnQgaWQgPSBhY3Rpdml0eS5nZXRSZXNvdXJjZXMoKS5nZXRJZGVudGlmaWVyKAogICAgICAgICAgICAgICAgICAgICJmbGFzaGZ5X2JhYnlfYmFja2dyb3VuZCIsICJkcmF3YWJsZSIsIGFjdGl2aXR5LmdldFBhY2thZ2VOYW1lKCkpOwogICAgICAgICAgICAgICAgaWYgKGlkICE9IDApIGltYWdlLnNldEltYWdlUmVzb3VyY2UoaWQpOwogICAgICAgICAgICAgICAgcm9vdC5hZGRWaWV3KGltYWdlLCBuZXcgRnJhbWVMYXlvdXQuTGF5b3V0UGFyYW1zKC0xLCAtMSkpOwogICAgICAgICAgICAgICAgcm9vdC5zZXRWaXNpYmlsaXR5KGFuZHJvaWQudmlldy5WaWV3LkdPTkUpOwogICAgICAgICAgICAgICAgb3ZlcmxheSA9IHJvb3Q7CiAgICAgICAgICAgICAgICBWaWV3R3JvdXAgZGVjb3IgPSAoVmlld0dyb3VwKSBhY3Rpdml0eS5nZXRXaW5kb3coKS5nZXREZWNvclZpZXcoKTsKICAgICAgICAgICAgICAgIGRlY29yLmFkZFZpZXcocm9vdCwgbmV3IFZpZXdHcm91cC5MYXlvdXRQYXJhbXMoLTEsIC0xKSk7CgogICAgICAgICAgICAgICAgQ2FtZXJhTWFuYWdlciBjYW1lcmEgPSAoQ2FtZXJhTWFuYWdlcikKICAgICAgICAgICAgICAgICAgICBhY3Rpdml0eS5nZXRTeXN0ZW1TZXJ2aWNlKENvbnRleHQuQ0FNRVJBX1NFUlZJQ0UpOwogICAgICAgICAgICAgICAgaWYgKGNhbWVyYSAhPSBudWxsKSB7CiAgICAgICAgICAgICAgICAgICAgdHJ5IHsKICAgICAgICAgICAgICAgICAgICAgICAgY2FtZXJhLnJlZ2lzdGVyVG9yY2hDYWxsYmFjaygKICAgICAgICAgICAgICAgICAgICAgICAgICAgIG5ldyBDYW1lcmFNYW5hZ2VyLlRvcmNoQ2FsbGJhY2soKSB7CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgQE92ZXJyaWRlIHB1YmxpYyB2b2lkIG9uVG9yY2hNb2RlQ2hhbmdlZCgKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgU3RyaW5nIGNhbWVyYUlkLCBib29sZWFuIGVuYWJsZWQpIHsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgaWYgKG92ZXJsYXkgIT0gbnVsbCkKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIG92ZXJsYXkuc2V0VmlzaWJpbGl0eShlbmFibGVkCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgPyBhbmRyb2lkLnZpZXcuVmlldy5WSVNJQkxFCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgOiBhbmRyb2lkLnZpZXcuVmlldy5HT05FKTsKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgQE92ZXJyaWRlIHB1YmxpYyB2b2lkIG9uVG9yY2hNb2RlVW5hdmFpbGFibGUoCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgIFN0cmluZyBjYW1lcmFJZCkge30KICAgICAgICAgICAgICAgICAgICAgICAgICAgIH0sCiAgICAgICAgICAgICAgICAgICAgICAgICAgICBuZXcgSGFuZGxlcihMb29wZXIuZ2V0TWFpbkxvb3BlcigpKSk7CiAgICAgICAgICAgICAgICAgICAgfSBjYXRjaCAoVGhyb3dhYmxlIGlnbm9yZWQpIHt9CiAgICAgICAgICAgICAgICB9CiAgICAgICAgICAgIH0KICAgICAgICB9KTsKICAgIH0KfQo=
-        run: echo "$JAVA_B64" | base64 -d > OverlayController.java
-
-      - name: Compile controller
-        run: |
-          ANDROID_JAR="$ANDROID_HOME/platforms/android-35/android.jar"
-          D8="$ANDROID_HOME/build-tools/35.0.0/d8"
-          mkdir -p helper_classes helper_dex
-          javac -source 8 -target 8 -classpath "$ANDROID_JAR" -d helper_classes OverlayController.java
-          "$D8" --min-api 23 --lib "$ANDROID_JAR" --output helper_dex helper_classes
-
-      - name: Merge controller
-        run: |
-          mkdir -p apk_unpacked merged_dex
-          unzip -q patched-base.apk -d apk_unpacked
-          "$ANDROID_HOME/build-tools/35.0.0/d8" --min-api 23 --lib "$ANDROID_HOME/platforms/android-35/android.jar" --output merged_dex apk_unpacked/classes.dex helper_dex/classes.dex
-          cp merged_dex/classes.dex apk_unpacked/classes.dex
-          cd apk_unpacked
-          zip -qr ../unsigned.apk .
-          cd ..
-
-      - name: Add arm64 libraries
-        run: |
-          mkdir -p arm64
-          unzip -q input/split_config.arm64_v8a.apk 'lib/arm64-v8a/*' -d arm64
-          mkdir -p apk_unpacked/lib
-          cp -r arm64/lib/arm64-v8a apk_unpacked/lib/
-          cd apk_unpacked
-          rm -f ../unsigned.apk
-          zip -qr ../unsigned.apk .
-          cd ..
-
-      - name: Align and sign
-        run: |
-          keytool -genkeypair -v -keystore flashfy.jks -storepass android -keypass android -alias flashfy -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=FlashFy Baby,O=FlashFy,C=BD"
-          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -f 4 unsigned.apk aligned.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks flashfy.jks --ks-pass pass:android --key-pass pass:android --ks-key-alias flashfy --out FlashFy-Baby.apk aligned.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify FlashFy-Baby.apk
+          if [ -f ./gradlew ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug
+          else
+            echo "ERROR: gradlew not found"
+            exit 1
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: FlashFy-Baby
-          path: FlashFy-Baby.apk
+          name: FlashFy-Baby-APK
+          path: |
+            **/build/outputs/apk/**/*.apk
